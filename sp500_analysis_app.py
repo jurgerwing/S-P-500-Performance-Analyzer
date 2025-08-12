@@ -17,13 +17,31 @@ def get_sp500_metadata():
 @st.cache_data
 def load_csi300_metadata():
     df = pd.read_excel("CSI 300.xlsx")
-    df = df.rename(columns={
-        "Ticker": "Symbol",
-        "Company": "Security",
-        "Sector": "GICS Sector",
-        "Industry Group": "GICS Sub-Industry"
-    })
-    return df[["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]]
+
+    # Clean ticker to extract first 6 digits only
+    def clean_ticker(raw):
+        ticker = str(raw).strip()
+        return ticker[:6] if ticker[:6].isdigit() else None
+
+    df["Cleaned"] = df["Ticker"].apply(clean_ticker)
+    df = df.dropna(subset=["Cleaned"])
+
+    # Fix suffix for exchange
+    def fix_ticker(ticker):
+        if ticker.startswith("6"):
+            return ticker + ".SS"
+        elif ticker.startswith("0") or ticker.startswith("3"):
+            return ticker + ".SZ"
+        else:
+            return None
+
+    df["Symbol"] = df["Cleaned"].apply(fix_ticker)
+    df = df.dropna(subset=["Symbol"])
+
+    # Return only the required columns
+    return df[["Symbol", "Company", "Sector", "Industry Group"]].rename(
+        columns={"Company": "Security", "Sector": "GICS Sector", "Industry Group": "GICS Sub-Industry"}
+    )
 
 # --- Price download ---
 @st.cache_data
