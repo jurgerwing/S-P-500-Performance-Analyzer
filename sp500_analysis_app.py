@@ -114,7 +114,7 @@ st.markdown(f"**Date Range:** `{start_date}` to `{end_date}`")
 st.markdown("---")
 
 # --- Tabs Layout ---
-tab1, tab2, tab3 = st.tabs(["🏆 Top Movers", "📊 Group Performance", "🔍 Ticker Inspector", "🗞️ Market Headlines"])
+tab1, tab2, tab3, tab4 = st.tabs(["🏆 Top Movers", "📊 Group Performance", "🔍 Ticker Inspector", "🗞️ Market Headlines"])
 
 with tab1:
     col1, col2 = st.columns(2)
