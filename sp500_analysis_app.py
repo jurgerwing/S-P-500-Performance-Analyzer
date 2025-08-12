@@ -5,10 +5,11 @@ from datetime import datetime, timedelta
 import requests
 
 @st.cache_data
-def get_headlines_by_date(start_date, end_date, api_key):
+def get_filtered_headlines(start_date, end_date, keywords, api_key):
+    query = " OR ".join(keywords)
     url = "https://newsapi.org/v2/everything"
     params = {
-        "q": "stock market OR s&p 500 OR earnings OR fed OR inflation",
+        "q": query,
         "from": start_date,
         "to": end_date,
         "sortBy": "relevancy",
@@ -142,20 +143,32 @@ if selected_ticker != "None":
     st.markdown(f"**Total Movement:** `{total_return:.2f}%`")
 
 with tab4:
-    st.subheader("🗞️ Market Headlines During Selected Period")
+    st.subheader("🗞️ News Related to Top Movers")
 
+    # 1. Extract top gainers and losers
+    top_gainers = sorted(performance.items(), key=lambda x: x[1], reverse=True)[:5]
+    top_losers = sorted(performance.items(), key=lambda x: x[1])[:5]
+    top_tickers = [t[0] for t in top_gainers + top_losers]
+
+    # 2. Map to company names
+    top_names = metadata[metadata['Symbol'].isin(top_tickers)]['Security'].tolist()
+    keywords = [name.split()[0] for name in top_names if isinstance(name, str)]
+
+    # 3. Format date + get API key
     start_str = start_date.strftime("%Y-%m-%d")
     end_str = end_date.strftime("%Y-%m-%d")
     api_key = st.secrets["newsapi_key"]
 
-    with st.spinner("Fetching headlines..."):
-        headlines = get_headlines_by_date(start_str, end_str, api_key)
+    # 4. Fetch filtered headlines
+    with st.spinner("Fetching relevant headlines..."):
+        headlines = get_filtered_headlines(start_str, end_str, keywords, api_key)
 
+    # 5. Display
     if headlines:
         for hl in headlines:
             st.markdown(f"- {hl}")
     else:
-        st.info("No relevant headlines found for the selected period.")
+        st.info("No relevant headlines found for the top movers in this time frame.")
 
 # --- Footer ---
 latest_date = max(df.index.max() for df in price_data.values())
