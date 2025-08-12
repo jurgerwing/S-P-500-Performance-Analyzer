@@ -3,29 +3,13 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 import requests
+import feedparser
 
 @st.cache_data
-def get_filtered_headlines(start_date, end_date, keywords, api_key):
-    query = " OR ".join(keywords)
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q": query,
-        "from": start_date,
-        "to": end_date,
-        "sortBy": "relevancy",
-        "language": "en",
-        "pageSize": 10,
-        "apiKey": api_key
-    }
-
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        if response.status_code != 200:
-            return [f"⚠️ NewsAPI error: {response.status_code}"]
-        data = response.json()
-        return [article['title'] for article in data.get("articles", [])]
-    except Exception as e:
-        return [f"⚠️ Error fetching headlines: {e}"]
+def get_live_rss_headlines():
+    url = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US"
+    feed = feedparser.parse(url)
+    return [entry.title for entry in feed.entries[:15]]
 
 st.set_page_config(layout="wide", page_title="S&P 500 Analyzer")
 
@@ -143,32 +127,18 @@ if selected_ticker != "None":
     st.markdown(f"**Total Movement:** `{total_return:.2f}%`")
 
 with tab4:
-    st.subheader("🗞️ News Related to Top Movers")
+    st.subheader("🗞️ Live Market Headlines")
 
-    # 1. Extract top gainers and losers
-    top_gainers = sorted(performance.items(), key=lambda x: x[1], reverse=True)[:5]
-    top_losers = sorted(performance.items(), key=lambda x: x[1])[:5]
-    top_tickers = [t[0] for t in top_gainers + top_losers]
+    with st.spinner("Loading headlines..."):
+        headlines = get_live_rss_headlines()
 
-    # 2. Map to company names
-    top_names = metadata[metadata['Symbol'].isin(top_tickers)]['Security'].tolist()
-    keywords = [name.split()[0] for name in top_names if isinstance(name, str)]
-
-    # 3. Format date + get API key
-    start_str = start_date.strftime("%Y-%m-%d")
-    end_str = end_date.strftime("%Y-%m-%d")
-    api_key = st.secrets["newsapi_key"]
-
-    # 4. Fetch filtered headlines
-    with st.spinner("Fetching relevant headlines..."):
-        headlines = get_filtered_headlines(start_str, end_str, keywords, api_key)
-
-    # 5. Display
     if headlines:
         for hl in headlines:
             st.markdown(f"- {hl}")
     else:
-        st.info("No relevant headlines found for the top movers in this time frame.")
+        st.info("No headlines available at this time.")
+
+    st.caption("🕒 These headlines are fetched live and do not reflect historical date filters.")
 
 # --- Footer ---
 latest_date = max(df.index.max() for df in price_data.values())
