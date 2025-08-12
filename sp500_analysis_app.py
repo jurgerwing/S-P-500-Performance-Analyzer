@@ -19,9 +19,9 @@ def load_csi300_metadata():
     df = pd.read_excel("CSI 300.xlsx")
     df = df.rename(columns={
         "Ticker": "Symbol",
-        "Company Name": "Security",
+        "Company": "Security",
         "Sector": "GICS Sector",
-        "Industry": "GICS Sub-Industry"
+        "Industry Group": "GICS Sub-Industry"
     })
     return df[["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]]
 
