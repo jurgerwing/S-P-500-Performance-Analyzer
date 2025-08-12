@@ -16,15 +16,14 @@ def get_sp500_metadata():
 # --- Load CSI 300 metadata ---
 @st.cache_data
 def load_csi300_metadata():
-    xlsx = pd.ExcelFile("CSI 300.xlsx")
-    df = pd.read_excel(xlsx, sheet_name=0)
+    df = pd.read_excel("CSI 300.xlsx")
     df = df.rename(columns={
-        'Ticker': 'Symbol',
-        'Company Name': 'Security',
-        'Sector': 'GICS Sector',
-        'Industry': 'GICS Sub-Industry'
+        "Ticker": "Symbol",
+        "Company Name": "Security",
+        "Sector": "GICS Sector",
+        "Industry": "GICS Sub-Industry"
     })
-    return df[['Symbol', 'Security', 'GICS Sector', 'GICS Sub-Industry']]
+    return df[["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]]
 
 # --- Price download ---
 @st.cache_data
