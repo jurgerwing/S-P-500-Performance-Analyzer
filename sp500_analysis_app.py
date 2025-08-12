@@ -73,21 +73,19 @@ def display_top_movers(performance, metadata, title, ascending=False):
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
     df = df[['Ticker', 'Security', 'Return']].sort_values(by='Return', ascending=ascending).head(10)
     df.reset_index(drop=True, inplace=True)
-    df.index = df.index + 1  # Start index at 1
-    df.insert(0, 'Rank', df.index)  # Add Rank as first visible column
+    df.insert(0, 'Rank', range(1, len(df) + 1))  # Clean rank column
     styled_df = df.style.format({'Return': '{:.2f}%'}).applymap(highlight_returns, subset=['Return'])
     st.markdown(f"### {title}")
-    st.dataframe(styled_df, use_container_width=True)
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 def display_group_performance(performance, metadata, group_col, title):
     df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
     group_perf = df.groupby(group_col)['Return'].mean().sort_values(ascending=False).round(2)
     group_perf = group_perf.reset_index().rename(columns={'Return': 'Avg Return (%)'})
-    group_perf.index = group_perf.index + 1  # Start index at 1
-    group_perf.insert(0, 'Rank', group_perf.index)  # Add Rank as first visible column
+    group_perf.insert(0, 'Rank', range(1, len(group_perf) + 1))  # Clean rank column
     st.markdown(f"### {title}")
-    st.dataframe(group_perf, use_container_width=True)
+    st.dataframe(group_perf, use_container_width=True, hide_index=True)
 
 # --- Sidebar ---
 with st.sidebar:
