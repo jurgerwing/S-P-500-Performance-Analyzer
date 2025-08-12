@@ -137,7 +137,7 @@ with tab4:
     else:
         st.info("No headlines available at this time.")
 
-    st.caption("🕒 These headlines are fetched live and do not reflect the selected date range.")
+    st.caption("These headlines are fetched live and do not reflect the selected date range.")
 
 # --- Footer ---
 latest_date = max(df.index.max() for df in price_data.values())
