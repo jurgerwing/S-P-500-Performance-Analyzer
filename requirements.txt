@@ -2,3 +2,5 @@ streamlit
 yfinance
 pandas
 feedparser
+openpyxl
+lxml
