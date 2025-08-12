@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # --- Page config ---
-st.set_page_config(layout="wide", page_title="Index Performance Analyzer", page_icon="📈")
+st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 
 # --- Load S&P 500 metadata ---
 @st.cache_data
@@ -18,6 +18,7 @@ def get_sp500_metadata():
 def load_csi300_metadata():
     df = pd.read_excel("CSI 300.xlsx")
 
+    # Clean ticker to extract first 6 digits only
     def clean_ticker(raw):
         ticker = str(raw).strip()
         return ticker[:6] if ticker[:6].isdigit() else None
@@ -40,7 +41,7 @@ def load_csi300_metadata():
         columns={"Company": "Security", "Sector": "GICS Sector", "Industry Group": "GICS Sub-Industry"}
     )
 
-# --- Download price data ---
+# --- Price download ---
 @st.cache_data
 def get_price_data(tickers, start_date, end_date):
     start_buffer = (pd.to_datetime(start_date) - timedelta(days=5)).strftime('%Y-%m-%d')
@@ -50,10 +51,10 @@ def get_price_data(tickers, start_date, end_date):
     price_data = {}
     for ticker in tickers:
         try:
-            df = data[ticker][['Close']].copy()
+            df = data[ticker][['Close', 'Volume']].copy()
             df['Daily % Change'] = df['Close'].pct_change() * 100
             df.dropna(inplace=True)
-            df = df.loc[(df.index.date >= pd.to_datetime(start_date).date()) & 
+            df = df.loc[(df.index.date >= pd.to_datetime(start_date).date()) &
                         (df.index.date <= pd.to_datetime(end_date).date())]
             price_data[ticker] = df
         except Exception:
@@ -62,84 +63,94 @@ def get_price_data(tickers, start_date, end_date):
 
 # --- Helpers ---
 def compute_performance(price_data):
-    return {ticker: df['Daily % Change'].sum() for ticker, df in price_data.items()}
+    perf = {}
+    avg_volume = {}
+    for ticker, df in price_data.items():
+        perf[ticker] = df['Daily % Change'].sum()
+        avg_volume[ticker] = df['Volume'].mean()
+    return perf, avg_volume
 
 def highlight_returns(val):
     color = 'green' if val > 0 else 'red'
     return f'color: {color}; font-weight: bold'
 
-def display_top_movers(performance, metadata, title, ascending=False):
+def display_top_movers(performance, avg_volume, metadata, title, ascending=False):
     df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
+    df['Avg Volume'] = df['Ticker'].map(avg_volume)
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
-    df = df[['Ticker', 'Security', 'Return']].sort_values(by='Return', ascending=ascending).head(10)
+    df = df[['Ticker', 'Security', 'Return', 'Avg Volume']].sort_values(by='Return', ascending=ascending).head(10)
     df.reset_index(drop=True, inplace=True)
-    df.insert(0, 'Rank', range(1, len(df) + 1))  # Clean rank column
-    styled_df = df.style.format({'Return': '{:.2f}%'}).applymap(highlight_returns, subset=['Return'])
-    st.markdown(f"### {title}")
-    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+    df.index += 1
+    styled_df = df.style.format({'Return': '{:.2f}%', 'Avg Volume': '{:,.0f}'}).applymap(highlight_returns, subset=['Return'])
+    st.subheader(title)
+    st.dataframe(styled_df, use_container_width=True)
 
-def display_group_performance(performance, metadata, group_col, title):
+def display_group_performance(performance, avg_volume, metadata, group_col, title):
     df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
+    df['Avg Volume'] = df['Ticker'].map(avg_volume)
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
-    group_perf = df.groupby(group_col)['Return'].mean().sort_values(ascending=False).round(2)
-    group_perf = group_perf.reset_index().rename(columns={'Return': 'Avg Return (%)'})
-    group_perf.insert(0, 'Rank', range(1, len(group_perf) + 1))  # Clean rank column
-    st.markdown(f"### {title}")
-    st.dataframe(group_perf, use_container_width=True, hide_index=True)
+    group_perf = df.groupby(group_col).agg({
+        'Return': 'mean',
+        'Avg Volume': 'mean'
+    }).sort_values(by='Return', ascending=False).round(2).reset_index()
+    group_perf.rename(columns={'Return': 'Avg Return (%)', 'Avg Volume': 'Avg Volume'}, inplace=True)
+    group_perf.index += 1
+    st.subheader(title)
+    st.dataframe(group_perf, use_container_width=True)
 
-# --- Sidebar ---
-with st.sidebar:
-    st.title("🧭 Index Selector")
-    index_choice = st.selectbox("Choose Index", ["S&P 500", "CSI 300"])
+# --- Sidebar controls ---
+st.sidebar.title("Index Selector")
+index_choice = st.sidebar.selectbox("Choose Index", ["S&P 500", "CSI 300"])
 
-    st.markdown("---")
-    today = datetime.today().date()
-    default_start = datetime(today.year, 1, 1).date()
-    start_date = st.date_input("Start Date", default_start)
-    end_date = st.date_input("End Date", today, max_value=today)
+st.sidebar.markdown("---")
+today = datetime.today().date()
+default_start = datetime(today.year, 1, 1).date()
+start_date = st.sidebar.date_input("Start Date", default_start)
+end_date = st.sidebar.date_input("End Date", today, max_value=today)
 
-    if start_date > end_date:
-        st.error("⚠️ Start date must be before end date.")
-        st.stop()
+if start_date > end_date:
+    st.error("⚠️ Start date must be before end date.")
+    st.stop()
 
 # --- Load metadata & price ---
 metadata = get_sp500_metadata() if index_choice == "S&P 500" else load_csi300_metadata()
 tickers = metadata['Symbol'].dropna().unique().tolist()
 
-with st.spinner("📥 Downloading price data..."):
+with st.spinner("Downloading price data..."):
     price_data = get_price_data(tickers, start_date, end_date)
 
 if not price_data:
-    st.error("❌ No valid data returned. Try a wider or different date range.")
+    st.error("⚠️ No valid data returned. Try a wider or different date range.")
     st.stop()
 
-performance = compute_performance(price_data)
+performance, avg_volume = compute_performance(price_data)
+latest_date = max(df.index.max() for df in price_data.values())
 
-# --- Title Section ---
-st.title(f"📊 {index_choice} Performance Analyzer")
-st.markdown(f"**Date Range:** `{start_date}` → `{end_date}`")
+# --- Title ---
+st.title(f"{index_choice} Performance Analyzer")
+st.markdown(f"**Date Range:** `{start_date}` to `{end_date}`")
 st.markdown("---")
 
 # --- Tabs ---
-tab1, tab2, tab3 = st.tabs(["🏆 Top Movers", "📈 Group Performance", "🔍 Ticker Inspector"])
+tab1, tab2, tab3 = st.tabs(["🏆 Top Movers", "📊 Group Performance", "🔍 Ticker Inspector"])
 
 with tab1:
     col1, col2 = st.columns(2)
     with col1:
-        display_top_movers(performance, metadata, "Top 10 Gainers", ascending=False)
+        display_top_movers(performance, avg_volume, metadata, "Top 10 Gainers", ascending=False)
     with col2:
-        display_top_movers(performance, metadata, "Top 10 Losers", ascending=True)
+        display_top_movers(performance, avg_volume, metadata, "Top 10 Losers", ascending=True)
 
 with tab2:
-    display_group_performance(performance, metadata, "GICS Sector", "Sector Performance")
+    display_group_performance(performance, avg_volume, metadata, "GICS Sector", "Sector Performance")
     st.markdown("___")
-    display_group_performance(performance, metadata, "GICS Sub-Industry", "Industry Group Performance")
+    display_group_performance(performance, avg_volume, metadata, "GICS Sub-Industry", "Industry Group Performance")
 
 with tab3:
     st.sidebar.markdown("---")
-    selected_ticker = st.sidebar.selectbox("🔍 Inspect Ticker", ["None"] + sorted(price_data.keys()))
+    selected_ticker = st.sidebar.selectbox("Inspect Specific Ticker", ["None"] + sorted(price_data.keys()))
     if selected_ticker != "None":
-        st.subheader(f"📈 Cumulative % Return: `{selected_ticker}`")
+        st.subheader(f"Cumulative % Return for `{selected_ticker}`")
         df = price_data[selected_ticker].copy().round(2)
         df['Cumulative % Change'] = df['Daily % Change'].cumsum()
         total_return = df['Daily % Change'].sum()
@@ -152,8 +163,9 @@ with tab3:
 if price_data:
     try:
         latest_date = max(df.index.max() for df in price_data.values())
+        latest_date_str = latest_date.strftime("%Y-%m-%d")
         st.markdown("---")
-        st.caption(f"📡 Data provided by Yahoo Finance • Last updated: `{latest_date.strftime('%Y-%m-%d')}`")
+        st.caption(f"Data provided by yfinance • Last updated: {latest_date_str}")
     except Exception:
         st.markdown("---")
-        st.caption("📡 Data provided by Yahoo Finance • Last updated: Unknown")
+        st.caption("Data provided by yfinance • Last updated: Unknown")
