@@ -2,6 +2,29 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
+import requests
+
+@st.cache_data
+def get_headlines_by_date(start_date, end_date, api_key):
+    url = "https://newsapi.org/v2/everything"
+    params = {
+        "q": "stock market OR s&p 500 OR earnings OR fed OR inflation",
+        "from": start_date,
+        "to": end_date,
+        "sortBy": "relevancy",
+        "language": "en",
+        "pageSize": 10,
+        "apiKey": api_key
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code != 200:
+            return [f"⚠️ NewsAPI error: {response.status_code}"]
+        data = response.json()
+        return [article['title'] for article in data.get("articles", [])]
+    except Exception as e:
+        return [f"⚠️ Error fetching headlines: {e}"]
 
 st.set_page_config(layout="wide", page_title="S&P 500 Analyzer")
 
@@ -91,7 +114,7 @@ st.markdown(f"**Date Range:** `{start_date}` to `{end_date}`")
 st.markdown("---")
 
 # --- Tabs Layout ---
-tab1, tab2, tab3 = st.tabs(["🏆 Top Movers", "📊 Group Performance", "🔍 Ticker Inspector"])
+tab1, tab2, tab3 = st.tabs(["🏆 Top Movers", "📊 Group Performance", "🔍 Ticker Inspector", "🗞️ Market Headlines"])
 
 with tab1:
     col1, col2 = st.columns(2)
@@ -118,9 +141,25 @@ if selected_ticker != "None":
     st.dataframe(df, use_container_width=True)
     st.markdown(f"**Total Movement:** `{total_return:.2f}%`")
 
+with tab4:
+    st.subheader("🗞️ Market Headlines During Selected Period")
+
+    start_str = start_date.strftime("%Y-%m-%d")
+    end_str = end_date.strftime("%Y-%m-%d")
+    api_key = st.secrets["newsapi_key"]
+
+    with st.spinner("Fetching headlines..."):
+        headlines = get_headlines_by_date(start_str, end_str, api_key)
+
+    if headlines:
+        for hl in headlines:
+            st.markdown(f"- {hl}")
+    else:
+        st.info("No relevant headlines found for the selected period.")
+
 # --- Footer ---
 latest_date = max(df.index.max() for df in price_data.values())
 latest_date_str = latest_date.strftime("%Y-%m-%d")
 
 st.markdown("---")
-st.caption(f"All data taken from yfinance • Last updated: {latest_date_str}")
+st.caption(f"Data provided by yfinance • Headlines provided by newsapi.org • Last updated: {latest_date_str}")
