@@ -133,5 +133,13 @@ with tab3:
         st.markdown(f"**Total Movement:** `{total_return:.2f}%`")
 
 # --- Footer ---
-st.markdown("---")
-st.caption(f"Data provided by yfinance • Last updated: {latest_date.strftime('%Y-%m-%d')}")
+if price_data:
+    try:
+        latest_date = max(df.index.max() for df in price_data.values())
+        latest_date_str = latest_date.strftime("%Y-%m-%d")
+        st.markdown("---")
+        st.caption(f"Data provided by yfinance • Last updated: {latest_date_str}")
+    except Exception:
+        st.markdown("---")
+        st.caption("Data provided by yfinance • Last updated: Unknown")
+
