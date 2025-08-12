@@ -1,142 +1,90 @@
-# Integrated S&P 500 and CSI 300 Analyzer (No News)
+# CSI 300 + S&P 500 Analyzer with Consistent Trading Dates and Timezones
 
 import streamlit as st
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 from datetime import datetime, timedelta
+from io import BytesIO
 
-# --- Page Config ---
-st.set_page_config(layout="wide", page_title="Market Analyzer (S&P 500 & CSI 300)")
-
-# --- Load CSI 300 Metadata ---
 @st.cache_data
+
 def load_csi300_metadata():
-    xlsx = pd.ExcelFile("CSI 300.xlsx")  # Replace with full path if necessary
-    df = xlsx.parse("Sheet1")
-
-    def convert_to_yahoo_format(ticker):
-        code = ticker.split()[0]
-        if code.startswith('6'):
-            return f"{code}.SS"
-        elif code.startswith(('0', '3')):
-            return f"{code}.SZ"
-        else:
-            return None
-
-    df['Yahoo Ticker'] = df['Ticker'].apply(convert_to_yahoo_format)
-    df = df[['Yahoo Ticker', 'Company', 'Sector', 'Industry Group']].dropna()
-    df = df.rename(columns={
-        'Yahoo Ticker': 'Ticker',
-        'Industry Group': 'Industry'
-    }).reset_index(drop=True)
+    # Load tickers from uploaded Excel file
+    xlsx = pd.ExcelFile("CSI 300.xlsx")
+    df = xlsx.parse(xlsx.sheet_names[0])
+    df = df[['Ticker', 'Company Name', 'Sector', 'Industry']].dropna()
+    df['Ticker'] = df['Ticker'].astype(str).str.zfill(6)
+    df['Yahoo Ticker'] = df['Ticker'].apply(lambda x: x + '.SS' if x.startswith('6') else x + '.SZ')
     return df
 
-# --- Load S&P 500 Metadata ---
 @st.cache_data
+
 def get_sp500_metadata():
-    table = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
-    df = table[0]
-    df = df.rename(columns={
-        'Symbol': 'Ticker',
-        'Security': 'Company',
-        'GICS Sector': 'Sector',
-        'GICS Sub-Industry': 'Industry'
-    })
-    return df[['Ticker', 'Company', 'Sector', 'Industry']]
+    table = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")[0]
+    table = table[['Symbol', 'Security', 'GICS Sector', 'GICS Sub-Industry']]
+    table.columns = ['Ticker', 'Company Name', 'Sector', 'Industry']
+    return table
 
-# --- Price Data Fetcher ---
-@st.cache_data
-def get_price_data(tickers, start_date, end_date):
-    start_buffer = (pd.to_datetime(start_date) - timedelta(days=5)).strftime('%Y-%m-%d')
-    end_buffer = (pd.to_datetime(end_date) + timedelta(days=1)).strftime('%Y-%m-%d')
-    data = yf.download(tickers, start=start_buffer, end=end_buffer, group_by="ticker", auto_adjust=True, threads=True)
+def get_trading_days(tickers, start_date, end_date):
+    # Pick a valid ticker to get trading days (e.g., AAPL or 000001.SZ)
+    data = yf.download(tickers[0], start=start_date, end=end_date, auto_adjust=False, progress=False)
+    return data.index.normalize()
 
-    price_data = {}
-    for ticker in tickers:
+def get_performance(df, start_date, end_date):
+    tickers = df['Yahoo Ticker'].tolist() if 'Yahoo Ticker' in df.columns else df['Ticker'].tolist()
+    perf = []
+
+    valid_days = get_trading_days(tickers, start_date, end_date)
+
+    for i, ticker in enumerate(tickers):
         try:
-            df = data[ticker][['Close']].copy()
-            df['Daily % Change'] = df['Close'].pct_change() * 100
-            df.dropna(inplace=True)
-            df = df.loc[(df.index.date >= pd.to_datetime(start_date).date()) & 
-                        (df.index.date <= pd.to_datetime(end_date).date())]
-            price_data[ticker] = df
-        except Exception:
+            data = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False, progress=False)
+            if data.empty:
+                continue
+            data = data.loc[valid_days.intersection(data.index)]
+            data['Pct Change'] = data['Close'].pct_change() * 100
+            total = data['Pct Change'].dropna().sum()
+            perf.append((ticker, total))
+        except:
             continue
-    return price_data
 
-# --- Performance Calculation ---
-def compute_performance(price_data):
-    return {ticker: df['Daily % Change'].sum() for ticker, df in price_data.items()}
+    perf_df = pd.DataFrame(perf, columns=['Ticker', 'Performance'])
+    merged = df.merge(perf_df, on='Ticker' if 'Yahoo Ticker' not in df.columns else 'Yahoo Ticker')
+    return merged.sort_values(by='Performance', ascending=False)
 
-# --- Display Functions ---
-def display_top_movers(performance, metadata, title, ascending=False):
-    df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
-    df = df.merge(metadata, on='Ticker', how='left')
-    df = df[['Ticker', 'Company', 'Return']].sort_values(by='Return', ascending=ascending).reset_index(drop=True)
-    df.index += 1
-    st.subheader(title)
-    st.dataframe(df.head(10).style.format({'Return': '{:.2f}%'}), use_container_width=True)
+# --------------------- Streamlit UI ---------------------
+st.set_page_config(layout="wide")
+st.title("📈 S&P 500 + CSI 300 Performance Analyzer")
 
-def display_group_performance(performance, metadata, group_col, title):
-    df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
-    df = df.merge(metadata, on='Ticker', how='left')
-    group_perf = df.groupby(group_col)['Return'].mean().sort_values(ascending=False).round(2)
-    group_df = group_perf.reset_index().rename(columns={'Return': 'Avg Return (%)'})
-    group_df.index += 1
-    st.subheader(title)
-    st.dataframe(group_df, use_container_width=True)
+index_choice = st.radio("Select Index", ["S&P 500", "CSI 300"])
 
-# --- UI: Index Toggle ---
-st.sidebar.title("📊 Index Selector")
-index_choice = st.sidebar.selectbox("Select Index:", ["S&P 500", "CSI 300"])
+# Date input
+def_ytd_start = datetime(datetime.today().year, 1, 1)
+def_today = datetime.today()
 
-# --- UI: Date Selector ---
-today = datetime.today().date()
-def_start = datetime(today.year, 1, 1).date()
-start_date = st.sidebar.date_input("Start Date", def_start)
-end_date = st.sidebar.date_input("End Date", today)
+start_date = st.date_input("Start Date", def_ytd_start)
+end_date = st.date_input("End Date", def_today)
+
 if start_date > end_date:
-    st.error("Start date must be before end date.")
+    st.error("⚠️ Start date must be before end date.")
     st.stop()
 
-# --- Load Metadata ---
-with st.spinner("Loading metadata..."):
-    metadata = get_sp500_metadata() if index_choice == "S&P 500" else load_csi300_metadata()
-    tickers = metadata['Ticker'].tolist()
+# Load metadata
+if index_choice == "S&P 500":
+    df_meta = get_sp500_metadata()
+else:
+    df_meta = load_csi300_metadata()
 
-# --- Fetch Price Data ---
-with st.spinner("Fetching live market data..."):
-    price_data = get_price_data(tickers, start_date, end_date)
+# Run performance calculation
+with st.spinner("Fetching data and calculating performance..."):
+    perf_df = get_performance(df_meta, start_date, end_date)
 
-if not price_data:
-    st.error("⚠️ No valid data returned. Try a different date range or check internet connection.")
-    st.stop()
+# Display output
+st.subheader(f"Top 10 Performers: {index_choice}")
+st.dataframe(perf_df[['Company Name', 'Ticker', 'Sector', 'Industry', 'Performance']].head(10), use_container_width=True)
 
-performance = compute_performance(price_data)
+st.subheader(f"Bottom 10 Performers: {index_choice}")
+st.dataframe(perf_df[['Company Name', 'Ticker', 'Sector', 'Industry', 'Performance']].tail(10), use_container_width=True)
 
-# --- Display ---
-st.title(f"📈 {index_choice} Performance Analyzer")
-st.markdown(f"**Date Range:** {start_date} to {end_date}")
-
-col1, col2 = st.columns(2)
-with col1:
-    display_top_movers(performance, metadata, "🔼 Top 10 Gainers", ascending=False)
-with col2:
-    display_top_movers(performance, metadata, "🔽 Top 10 Losers", ascending=True)
-
-display_group_performance(performance, metadata, "Sector", "📊 Sector Performance")
-display_group_performance(performance, metadata, "Industry", "📊 Industry Group Performance")
-
-# --- Ticker Inspector ---
-st.sidebar.markdown("---")
-selected_ticker = st.sidebar.selectbox("🔍 Inspect Specific Ticker", ["None"] + sorted(price_data.keys()))
-if selected_ticker != "None":
-    st.subheader(f"Daily % Changes for {selected_ticker}")
-    df = price_data[selected_ticker].copy()
-    df['Cumulative % Change'] = df['Daily % Change'].cumsum()
-    st.line_chart(df['Cumulative % Change'])
-    st.dataframe(df.round(2), use_container_width=True)
-
-# --- Footer ---
-latest_date = max([df.index.max() for df in price_data.values()])
-st.markdown(f"---\n_Last updated: **{latest_date.date()}**_", unsafe_allow_html=True)
+# Optional download
+st.download_button("📥 Download Full Results", data=perf_df.to_csv(index=False), file_name=f"{index_choice}_performance.csv")
