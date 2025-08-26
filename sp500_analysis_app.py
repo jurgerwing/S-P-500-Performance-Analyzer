@@ -9,7 +9,7 @@ st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 # --- Load S&P 500 metadata ---
 @st.cache_data
 def get_sp500_metadata():
-    filepath = "sp500_gics_metadata.csv"
+    filepath = "S&P 500.csv"
     if not os.path.exists(filepath):
         st.error(f"CSV file not found: {filepath}")
         st.stop()
