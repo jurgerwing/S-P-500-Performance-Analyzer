@@ -9,8 +9,15 @@ st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 # --- Load S&P 500 metadata ---
 @st.cache_data
 def get_sp500_metadata():
-    table = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
-    df = table[0][['Symbol', 'Security', 'GICS Sector', 'GICS Sub-Industry']]
+    filepath = "sp500_gics_metadata.csv"
+    df = pd.read_csv(filepath)
+    df.columns = [col.strip().lower().replace(" ", "_") for col in df.columns]
+    df.rename(columns={
+        "symbol": "ticker",
+        "security": "company",
+        "gics_sector": "sector",
+        "gics_sub-industry": "industry_group"
+    }, inplace=True)
     return df
 
 # --- Load CSI 300 metadata ---
