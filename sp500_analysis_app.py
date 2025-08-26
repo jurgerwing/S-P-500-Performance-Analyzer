@@ -8,18 +8,29 @@ st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 
 # --- Load S&P 500 metadata ---
 @st.cache_data
-@st.cache_data
 def get_sp500_metadata():
-    filepath = "sp500_gics_metadata.csv"  # Replace with your actual file name if different
-    df = pd.read_csv(filepath)
+    try:
+        # Use the exact filename as seen in your repo (case and spacing sensitive)
+        filepath = "S&P 500.csv"
 
-    # Sanitize all column headers: strip whitespace, remove invisible characters
-    df.columns = df.columns.str.strip().str.replace('\ufeff', '', regex=True)
+        # Debug log to verify path
+        st.write("Looking for file at:", filepath)
 
-    # Debug: See cleaned headers (can comment this out later)
-    st.write("📄 Cleaned Columns:", df.columns.tolist())
+        df = pd.read_csv(filepath)
 
-    return df
+        # Optional: normalize column headers to avoid KeyError
+        df.columns = [col.strip().lower() for col in df.columns]
+
+        # Rename relevant columns to match expected casing in rest of script
+        df.rename(columns={"symbol": "Symbol", "security": "Security", "gics sector": "GICS Sector", "gics industry": "GICS Industry"}, inplace=True)
+
+        return df
+    except FileNotFoundError as e:
+        st.error(f"Metadata CSV not found: {e}")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading metadata: {e}")
+        return pd.DataFrame()
 
 # --- Load CSI 300 metadata ---
 @st.cache_data
