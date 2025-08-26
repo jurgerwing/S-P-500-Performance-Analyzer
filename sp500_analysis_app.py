@@ -12,7 +12,7 @@ def get_sp500_metadata():
         df = pd.read_csv("S&P 500.csv")
         df.columns = [col.strip() for col in df.columns]
         col_map = {}
-       for c in df.columns:
+    for c in df.columns:
         cl = str(c).lower()
         if "security" in cl or "company" in cl or "name" in cl: col_map[c] = "Security"
         elif "sector" in cl: col_map[c] = "GICS Sector"
