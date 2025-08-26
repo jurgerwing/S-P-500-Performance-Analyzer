@@ -20,6 +20,12 @@ def get_sp500_metadata():
             elif "gics industry group" in cl or "gics sub-industry" in cl: col_map[c] = "GICS Sub-Industry"
             elif "gics industry" in cl: col_map[c] = "GICS Industry"
         df.rename(columns=col_map, inplace=True)
+        # Check columns
+        required_cols = ["Symbol", "Security"]
+        for col in required_cols:
+            if col not in df.columns:
+                st.error(f"S&P 500 CSV missing '{col}' column after mapping.")
+                return pd.DataFrame()
         return df
     except Exception as e:
         st.error(f"S&P 500 CSV error: {e}")
@@ -30,7 +36,6 @@ def get_sp500_metadata():
 def load_csi300_metadata():
     try:
         df = pd.read_excel("CSI 300.xlsx")
-        # Try a robust method to find the ticker column
         possible_names = ["Ticker", "代码", "Code", "Symbol", "Stock Code"]
         ticker_col = next((c for c in df.columns if any(x.lower() in c.lower() for x in possible_names)), None)
         if not ticker_col:
@@ -44,7 +49,6 @@ def load_csi300_metadata():
             else: return None
         df["Symbol"] = df["Cleaned"].apply(fix_ticker)
         df = df.dropna(subset=["Symbol"])
-        # Find best mapping for security, sector, industry group
         col_map = {}
         for c in df.columns:
             cl = c.lower()
@@ -53,6 +57,12 @@ def load_csi300_metadata():
             elif "industry group" in cl: col_map[c] = "GICS Sub-Industry"
             elif "industry" in cl: col_map[c] = "GICS Sub-Industry"
         df.rename(columns=col_map, inplace=True)
+        # Check columns
+        required_cols = ["Symbol", "Security"]
+        for col in required_cols:
+            if col not in df.columns:
+                st.error(f"CSI 300 Excel missing '{col}' column after mapping.")
+                return pd.DataFrame()
         return df[["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]]
     except Exception as e:
         st.error(f"CSI 300 Excel error: {e}")
@@ -90,6 +100,9 @@ def display_top_movers(performance, avg_volume, metadata, title, ascending=False
     df = df[['Ticker', 'Security', 'Return', 'Avg Volume']].sort_values(by='Return', ascending=ascending).head(10)
     df.reset_index(drop=True, inplace=True)
     df.index += 1
+    # ---- Robust: ensure correct dtypes before styling
+    df['Return'] = pd.to_numeric(df['Return'], errors='coerce')
+    df['Avg Volume'] = pd.to_numeric(df['Avg Volume'], errors='coerce')
     st.subheader(title)
     st.dataframe(df.style.format({'Return': '{:.2f}%', 'Avg Volume': '{:,.0f}'}), use_container_width=True)
 
@@ -97,6 +110,10 @@ def display_group_performance(performance, avg_volume, metadata, group_col, titl
     df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
     df['Avg Volume'] = df['Ticker'].map(avg_volume)
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
+    # Defensive: check if group_col is present
+    if group_col not in df.columns:
+        st.warning(f"Column '{group_col}' not present in metadata for group performance.")
+        return
     group_perf = df.groupby(group_col).agg({
         'Return': 'mean',
         'Avg Volume': 'mean'
@@ -125,6 +142,9 @@ if metadata.empty:
     st.error(f"{index_choice} metadata not loaded. Please check your CSV/XLSX and restart the app.")
     st.stop()
 tickers = metadata['Symbol'].dropna().unique().tolist()
+if not tickers:
+    st.error("No valid tickers found in metadata.")
+    st.stop()
 
 # --- Download prices (robust and slow but sure) ---
 with st.spinner("Downloading price data..."):
