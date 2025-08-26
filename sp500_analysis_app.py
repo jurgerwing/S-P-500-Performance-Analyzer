@@ -9,7 +9,7 @@ st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 # --- Load S&P 500 metadata ---
 @st.cache_data
 def get_sp500_metadata():
-    filepath = "S&P 500.csv"
+    filepath = "S&P_500.csv"
     df = pd.read_csv(filepath)
     df.columns = [col.strip().lower().replace(" ", "_") for col in df.columns]
     df.rename(columns={
