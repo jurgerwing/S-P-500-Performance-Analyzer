@@ -3,88 +3,117 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
-# --- Page config ---
 st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 
-# --- Load S&P 500 metadata ---
+# --- Robust S&P 500 metadata loader ---
 @st.cache_data
 def get_sp500_metadata():
-    try:
-        # Use the exact filename as seen in your repo (case and spacing sensitive)
-        filepath = "S&P 500.csv"
-
-        # Debug log to verify path
-        st.write("Looking for file at:", filepath)
-
-        df = pd.read_csv(filepath)
-        df.columns = df.columns.str.strip()  # strip whitespace
-        
-        # Optional: normalize column headers to avoid KeyError
-        df.columns = [col.strip().lower() for col in df.columns]
-
-        # Rename relevant columns to match expected casing in rest of script
-        df.rename(columns={"symbol": "Symbol", "security": "Security", "gics sector": "GICS Sector", "gics industry": "GICS Industry"}, inplace=True)
-
-        return df
-    except FileNotFoundError as e:
-        st.error(f"Metadata CSV not found: {e}")
+    # Try all common filename permutations
+    for filename in ["S&P 500.csv", "S&P500.csv", "s&p 500.csv", "sp500.csv"]:
+        try:
+            df = pd.read_csv(filename)
+            break
+        except FileNotFoundError:
+            continue
+    else:
+        st.error("S&P 500 metadata CSV not found. Please check the filename and upload location.")
         return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Error loading metadata: {e}")
-        return pd.DataFrame()
+    
+    # Clean and normalize columns
+    df.columns = [c.strip().replace("\ufeff", "") for c in df.columns]
+    cols_lower = [c.lower() for c in df.columns]
+    col_map = {}
+    # Dynamically map known names to standardized ones
+    for c in df.columns:
+        cl = c.lower()
+        if "symbol" in cl: col_map[c] = "Symbol"
+        elif "security" in cl or "company" in cl: col_map[c] = "Security"
+        elif "sector" in cl: col_map[c] = "GICS Sector"
+        elif "industry group" in cl: col_map[c] = "GICS Industry"
+        elif "sub-industry" in cl: col_map[c] = "GICS Sub-Industry"
+    df.rename(columns=col_map, inplace=True)
+    # Confirm essential columns
+    for col in ["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]:
+        if col not in df.columns:
+            st.error(f"Column '{col}' not found in your S&P 500 CSV (columns: {df.columns.tolist()})")
+            return pd.DataFrame()
+    df = df.drop_duplicates(subset=["Symbol"])
+    return df
 
-# --- Load CSI 300 metadata ---
+# --- Robust CSI 300 metadata loader ---
 @st.cache_data
 def load_csi300_metadata():
-    df = pd.read_excel("CSI 300.xlsx")
+    try:
+        df = pd.read_excel("CSI 300.xlsx")
+    except FileNotFoundError:
+        st.error("CSI 300 metadata Excel file not found.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading CSI 300 metadata: {e}")
+        return pd.DataFrame()
 
-    # Clean ticker to extract first 6 digits only
-    def clean_ticker(raw):
-        ticker = str(raw).strip()
-        return ticker[:6] if ticker[:6].isdigit() else None
-
-    df["Cleaned"] = df["Ticker"].apply(clean_ticker)
+    # Clean ticker (assume always column named "Ticker" or similar)
+    ticker_col = [c for c in df.columns if "ticker" in c.lower()]
+    if not ticker_col:
+        st.error("No column containing 'Ticker' found in CSI 300 Excel.")
+        return pd.DataFrame()
+    ticker_col = ticker_col[0]
+    df["Cleaned"] = df[ticker_col].astype(str).str.extract(r"(\d{6})")
     df = df.dropna(subset=["Cleaned"])
-
     def fix_ticker(ticker):
-        if ticker.startswith("6"):
-            return ticker + ".SS"
-        elif ticker.startswith("0") or ticker.startswith("3"):
-            return ticker + ".SZ"
-        else:
-            return None
-
+        if ticker.startswith("6"): return ticker + ".SS"
+        elif ticker.startswith("0") or ticker.startswith("3"): return ticker + ".SZ"
+        else: return None
     df["Symbol"] = df["Cleaned"].apply(fix_ticker)
     df = df.dropna(subset=["Symbol"])
 
-    return df[["Symbol", "Company", "Sector", "Industry Group"]].rename(
-        columns={"Company": "Security", "Sector": "GICS Sector", "Industry Group": "GICS Sub-Industry"}
-    )
+    # Try to map to consistent columns for display
+    col_map = {}
+    for c in df.columns:
+        cl = c.lower()
+        if "security" in cl or "company" in cl: col_map[c] = "Security"
+        elif "sector" in cl: col_map[c] = "GICS Sector"
+        elif "industry" in cl and "sub" in cl: col_map[c] = "GICS Sub-Industry"
+        elif "industry group" in cl: col_map[c] = "GICS Sub-Industry"
+    df.rename(columns=col_map, inplace=True)
+    for col in ["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]:
+        if col not in df.columns:
+            st.error(f"Column '{col}' not found in your CSI 300 file (columns: {df.columns.tolist()})")
+            return pd.DataFrame()
+    return df[["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]]
 
 # --- Price download ---
-@st.cache_data
+@st.cache_data(show_spinner="Downloading price data…")
 def get_price_data(tickers, start_date, end_date):
     start_buffer = (pd.to_datetime(start_date) - timedelta(days=5)).strftime('%Y-%m-%d')
     end_buffer = (pd.to_datetime(end_date) + timedelta(days=1)).strftime('%Y-%m-%d')
-    data = yf.download(tickers, start=start_buffer, end=end_buffer, group_by="ticker", auto_adjust=True, threads=True)
-
+    try:
+        data = yf.download(tickers, start=start_buffer, end=end_buffer, group_by="ticker", auto_adjust=True, threads=True)
+    except Exception as e:
+        st.error(f"Yahoo download error: {e}")
+        return {}
     price_data = {}
     for ticker in tickers:
         try:
-            df = data[ticker][['Close', 'Volume']].copy()
-            df['Daily % Change'] = df['Close'].pct_change() * 100
-            df.dropna(inplace=True)
-            df = df.loc[(df.index.date >= pd.to_datetime(start_date).date()) &
-                        (df.index.date <= pd.to_datetime(end_date).date())]
-            price_data[ticker] = df
+            # yfinance returns DataFrame for each ticker if multiple, Series if only one
+            tdata = data[ticker] if ticker in data else None
+            if tdata is None or tdata.empty: continue
+            if isinstance(tdata, pd.Series): tdata = tdata.to_frame().T
+            if "Close" not in tdata.columns: continue
+            tdata = tdata[['Close', 'Volume']].copy()
+            tdata['Daily % Change'] = tdata['Close'].pct_change() * 100
+            tdata = tdata.dropna()
+            tdata = tdata.loc[(tdata.index.date >= pd.to_datetime(start_date).date()) &
+                              (tdata.index.date <= pd.to_datetime(end_date).date())]
+            if len(tdata) > 0:
+                price_data[ticker] = tdata
         except Exception:
             continue
     return price_data
 
 # --- Helpers ---
 def compute_performance(price_data):
-    perf = {}
-    avg_volume = {}
+    perf, avg_volume = {}, {}
     for ticker, df in price_data.items():
         perf[ticker] = df['Daily % Change'].sum()
         avg_volume[ticker] = df['Volume'].mean()
@@ -99,8 +128,7 @@ def display_top_movers(performance, avg_volume, metadata, title, ascending=False
     df['Avg Volume'] = df['Ticker'].map(avg_volume)
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
     df = df[['Ticker', 'Security', 'Return', 'Avg Volume']].sort_values(by='Return', ascending=ascending).head(10)
-    df.reset_index(drop=True, inplace=True)
-    df.index += 1
+    df.index = range(1, len(df)+1)
     styled_df = df.style.format({'Return': '{:.2f}%', 'Avg Volume': '{:,.0f}'}).applymap(highlight_returns, subset=['Return'])
     st.subheader(title)
     st.dataframe(styled_df, use_container_width=True)
@@ -109,10 +137,10 @@ def display_group_performance(performance, avg_volume, metadata, group_col, titl
     df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
     df['Avg Volume'] = df['Ticker'].map(avg_volume)
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
-    group_perf = df.groupby(group_col).agg({
-        'Return': 'mean',
-        'Avg Volume': 'mean'
-    }).sort_values(by='Return', ascending=False).round(2).reset_index()
+    if group_col not in df.columns:
+        st.warning(f"Grouping column `{group_col}` not found in data (columns: {df.columns.tolist()})")
+        return
+    group_perf = df.groupby(group_col).agg({'Return': 'mean', 'Avg Volume': 'mean'}).sort_values(by='Return', ascending=False).round(2).reset_index()
     group_perf.rename(columns={'Return': 'Avg Return (%)', 'Avg Volume': 'Avg Volume'}, inplace=True)
     group_perf.index += 1
     st.subheader(title)
@@ -134,6 +162,9 @@ if start_date > end_date:
 
 # --- Load metadata & price ---
 metadata = get_sp500_metadata() if index_choice == "S&P 500" else load_csi300_metadata()
+if metadata.empty:
+    st.error("No metadata loaded — check file and columns.")
+    st.stop()
 tickers = metadata['Symbol'].dropna().unique().tolist()
 
 with st.spinner("Downloading price data..."):
@@ -144,7 +175,6 @@ if not price_data:
     st.stop()
 
 performance, avg_volume = compute_performance(price_data)
-latest_date = max(df.index.max() for df in price_data.values())
 
 # --- Title ---
 st.title(f"{index_choice} Performance Analyzer")
@@ -174,7 +204,6 @@ with tab3:
         df = price_data[selected_ticker].copy().round(2)
         df['Cumulative % Change'] = df['Daily % Change'].cumsum()
         total_return = df['Daily % Change'].sum()
-
         st.line_chart(df['Cumulative % Change'])
         st.dataframe(df, use_container_width=True)
         st.markdown(f"**Total Movement:** `{total_return:.2f}%`")
