@@ -12,18 +12,26 @@ def get_sp500_metadata():
         df = pd.read_csv("S&P 500.csv")
         df.columns = [col.strip() for col in df.columns]
         col_map = {}
-    for c in df.columns:
-        cl = str(c).lower()
-        if "security" in cl or "company" in cl or "name" in cl: col_map[c] = "Security"
-        elif "sector" in cl: col_map[c] = "GICS Sector"
-        elif "industry group" in cl: col_map[c] = "GICS Sub-Industry"
-        elif "industry" in cl: col_map[c] = "GICS Sub-Industry"
+        for c in df.columns:
+            cl = str(c).lower()
+            if "symbol" in cl:
+                col_map[c] = "Symbol"
+            elif "security" in cl or "company" in cl or "name" in cl:
+                col_map[c] = "Security"
+            elif "gics sector" in cl or "sector" in cl:
+                col_map[c] = "GICS Sector"
+            elif "gics industry group" in cl or "industry group" in cl:
+                col_map[c] = "GICS Industry Group"
+            elif "gics sub-industry" in cl or "sub-industry" in cl:
+                col_map[c] = "GICS Sub-Industry"
+            elif "gics industry" in cl or "industry" in cl:
+                col_map[c] = "GICS Industry"
         df.rename(columns=col_map, inplace=True)
         # Check columns
         required_cols = ["Symbol", "Security"]
         for col in required_cols:
             if col not in df.columns:
-                st.error(f"S&P 500 CSV missing '{col}' column after mapping.")
+                st.error(f"S&P 500 CSV missing '{col}' column after mapping. Columns: {df.columns.tolist()}")
                 return pd.DataFrame()
         return df
     except Exception as e:
@@ -36,7 +44,7 @@ def load_csi300_metadata():
     try:
         df = pd.read_excel("CSI 300.xlsx")
         possible_names = ["Ticker", "代码", "Code", "Symbol", "Stock Code"]
-        ticker_col = next((c for c in df.columns if any(x.lower() in c.lower() for x in possible_names)), None)
+        ticker_col = next((c for c in df.columns if any(x.lower() in str(c).lower() for x in possible_names)), None)
         if not ticker_col:
             st.error(f"CSI 300: No ticker column found. Columns: {df.columns.tolist()}")
             return pd.DataFrame()
@@ -53,16 +61,19 @@ def load_csi300_metadata():
             cl = str(c).lower()
             if "security" in cl or "company" in cl or "name" in cl: col_map[c] = "Security"
             elif "sector" in cl: col_map[c] = "GICS Sector"
-            elif "industry group" in cl: col_map[c] = "GICS Sub-Industry"
-            elif "industry" in cl: col_map[c] = "GICS Sub-Industry"
+            elif "industry group" in cl: col_map[c] = "GICS Industry Group"
+            elif "sub-industry" in cl: col_map[c] = "GICS Sub-Industry"
+            elif "industry" in cl: col_map[c] = "GICS Industry"
         df.rename(columns=col_map, inplace=True)
         # Check columns
         required_cols = ["Symbol", "Security"]
         for col in required_cols:
             if col not in df.columns:
-                st.error(f"CSI 300 Excel missing '{col}' column after mapping.")
+                st.error(f"CSI 300 Excel missing '{col}' column after mapping. Columns: {df.columns.tolist()}")
                 return pd.DataFrame()
-        return df[["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]]
+        # Try to preserve at least sector/industry columns if available
+        cols = [c for c in ["Symbol", "Security", "GICS Sector", "GICS Industry Group", "GICS Sub-Industry", "GICS Industry"] if c in df.columns]
+        return df[cols]
     except Exception as e:
         st.error(f"CSI 300 Excel error: {e}")
         return pd.DataFrame()
@@ -170,9 +181,16 @@ with tab1:
     with col2:
         display_top_movers(performance, avg_volume, metadata, "Top 10 Losers", ascending=True)
 with tab2:
-    display_group_performance(performance, avg_volume, metadata, "GICS Sector", "Sector Performance")
+    # Use the best available group columns
+    if "GICS Sector" in metadata.columns:
+        display_group_performance(performance, avg_volume, metadata, "GICS Sector", "Sector Performance")
+    elif "GICS Industry Group" in metadata.columns:
+        display_group_performance(performance, avg_volume, metadata, "GICS Industry Group", "Industry Group Performance")
+    elif "GICS Industry" in metadata.columns:
+        display_group_performance(performance, avg_volume, metadata, "GICS Industry", "Industry Performance")
     st.markdown("___")
-    display_group_performance(performance, avg_volume, metadata, "GICS Sub-Industry", "Industry Group Performance")
+    if "GICS Sub-Industry" in metadata.columns:
+        display_group_performance(performance, avg_volume, metadata, "GICS Sub-Industry", "Sub-Industry Performance")
 with tab3:
     st.sidebar.markdown("---")
     selected_ticker = st.sidebar.selectbox("Inspect Specific Ticker", ["None"] + sorted(price_data.keys()))
