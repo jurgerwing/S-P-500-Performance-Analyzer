@@ -17,7 +17,8 @@ def get_sp500_metadata():
         st.write("Looking for file at:", filepath)
 
         df = pd.read_csv(filepath)
-
+        df.columns = df.columns.str.strip()  # strip whitespace
+        
         # Optional: normalize column headers to avoid KeyError
         df.columns = [col.strip().lower() for col in df.columns]
 
