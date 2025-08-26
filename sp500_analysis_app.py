@@ -51,7 +51,7 @@ def load_csi300_metadata():
         df = df.dropna(subset=["Symbol"])
         col_map = {}
         for c in df.columns:
-            cl = c.lower()
+            cl = str(c).lower()
             if "security" in cl or "company" in cl or "name" in cl: col_map[c] = "Security"
             elif "sector" in cl: col_map[c] = "GICS Sector"
             elif "industry group" in cl: col_map[c] = "GICS Sub-Industry"
@@ -110,6 +110,9 @@ def display_group_performance(performance, avg_volume, metadata, group_col, titl
     df = pd.DataFrame(performance.items(), columns=['Ticker', 'Return'])
     df['Avg Volume'] = df['Ticker'].map(avg_volume)
     df = df.merge(metadata, left_on='Ticker', right_on='Symbol', how='left')
+    # Force columns to numeric before groupby!
+    df['Return'] = pd.to_numeric(df['Return'], errors='coerce')
+    df['Avg Volume'] = pd.to_numeric(df['Avg Volume'], errors='coerce')
     # Defensive: check if group_col is present
     if group_col not in df.columns:
         st.warning(f"Column '{group_col}' not present in metadata for group performance.")
