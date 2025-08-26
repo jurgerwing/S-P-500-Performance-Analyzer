@@ -12,13 +12,12 @@ def get_sp500_metadata():
         df = pd.read_csv("S&P 500.csv")
         df.columns = [col.strip() for col in df.columns]
         col_map = {}
-        for c in df.columns:
-            cl = c.lower()
-            if "symbol" in cl: col_map[c] = "Symbol"
-            elif "security" in cl or "company" in cl: col_map[c] = "Security"
-            elif "gics sector" in cl: col_map[c] = "GICS Sector"
-            elif "gics industry group" in cl or "gics sub-industry" in cl: col_map[c] = "GICS Sub-Industry"
-            elif "gics industry" in cl: col_map[c] = "GICS Industry"
+       for c in df.columns:
+        cl = str(c).lower()
+        if "security" in cl or "company" in cl or "name" in cl: col_map[c] = "Security"
+        elif "sector" in cl: col_map[c] = "GICS Sector"
+        elif "industry group" in cl: col_map[c] = "GICS Sub-Industry"
+        elif "industry" in cl: col_map[c] = "GICS Sub-Industry"
         df.rename(columns=col_map, inplace=True)
         # Check columns
         required_cols = ["Symbol", "Security"]
