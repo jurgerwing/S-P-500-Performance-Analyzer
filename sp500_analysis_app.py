@@ -8,14 +8,17 @@ st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 
 # --- Load S&P 500 metadata ---
 @st.cache_data
+@st.cache_data
 def get_sp500_metadata():
-    filepath = "S&P 500.csv"
-    if not os.path.exists(filepath):
-        st.error(f"CSV file not found: {filepath}")
-        st.stop()
-
+    filepath = "sp500_gics_metadata.csv"  # Replace with your actual file name if different
     df = pd.read_csv(filepath)
-    df.columns = [col.strip() for col in df.columns]  # Clean column names
+
+    # Sanitize all column headers: strip whitespace, remove invisible characters
+    df.columns = df.columns.str.strip().str.replace('\ufeff', '', regex=True)
+
+    # Debug: See cleaned headers (can comment this out later)
+    st.write("📄 Cleaned Columns:", df.columns.tolist())
+
     return df
 
 # --- Load CSI 300 metadata ---
