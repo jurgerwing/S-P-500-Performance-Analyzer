@@ -52,12 +52,16 @@ def load_csi300_metadata():
         st.error(f"Error loading CSI 300 metadata: {e}")
         return pd.DataFrame()
 
-    # Clean ticker (assume always column named "Ticker" or similar)
-    ticker_col = [c for c in df.columns if "ticker" in c.lower()]
+    # Show user the columns if there's a loading error
+    st.write("CSI 300 columns:", df.columns.tolist())
+
+    # Try all reasonable ticker column names
+    possible_names = ["Ticker", "代码", "Code", "Symbol", "Stock Code"]
+    ticker_col = next((c for c in df.columns if any(x.lower() in c.lower() for x in possible_names)), None)
     if not ticker_col:
-        st.error("No column containing 'Ticker' found in CSI 300 Excel.")
+        st.error(f"No column for ticker found! Headers: {df.columns.tolist()}")
         return pd.DataFrame()
-    ticker_col = ticker_col[0]
+    
     df["Cleaned"] = df[ticker_col].astype(str).str.extract(r"(\d{6})")
     df = df.dropna(subset=["Cleaned"])
     def fix_ticker(ticker):
@@ -67,13 +71,13 @@ def load_csi300_metadata():
     df["Symbol"] = df["Cleaned"].apply(fix_ticker)
     df = df.dropna(subset=["Symbol"])
 
-    # Try to map to consistent columns for display
+    # Flexible mapping for security/sector/industry
     col_map = {}
     for c in df.columns:
         cl = c.lower()
-        if "security" in cl or "company" in cl: col_map[c] = "Security"
+        if "security" in cl or "company" in cl or "name" in cl: col_map[c] = "Security"
         elif "sector" in cl: col_map[c] = "GICS Sector"
-        elif "industry" in cl and "sub" in cl: col_map[c] = "GICS Sub-Industry"
+        elif "industry" in cl: col_map[c] = "GICS Sub-Industry"
         elif "industry group" in cl: col_map[c] = "GICS Sub-Industry"
     df.rename(columns=col_map, inplace=True)
     for col in ["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]:
