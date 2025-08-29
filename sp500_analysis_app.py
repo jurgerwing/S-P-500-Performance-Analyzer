@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # --- Page config ---
 st.set_page_config(layout="wide", page_title="Index Performance Analyzer")
 
-# --- Load S&P 500 metadata ---
+# --- Load S&P500 data ---
 @st.cache_data
 def get_sp500_metadata():
     url = "https://datahub.io/core/s-and-p-500-companies/r/constituents.csv"
@@ -16,16 +16,14 @@ def get_sp500_metadata():
         "Sector": "GICS Sector",
         "Industry": "GICS Sub-Industry"
     })
-    # Optional: make sure columns are in the expected order
     cols = ["Symbol", "Security", "GICS Sector", "GICS Sub-Industry"]
     return df[cols]
 
-# --- Load CSI 300 metadata ---
+# --- Load CSI300 data ---
 @st.cache_data
 def load_csi300_metadata():
     df = pd.read_excel("CSI 300.xlsx")
 
-    # Clean ticker to extract first 6 digits only
     def clean_ticker(raw):
         ticker = str(raw).strip()
         return ticker[:6] if ticker[:6].isdigit() else None
@@ -48,7 +46,7 @@ def load_csi300_metadata():
         columns={"Company": "Security", "Sector": "GICS Sector", "Industry Group": "GICS Sub-Industry"}
     )
 
-# --- Price download ---
+# --- Download price data ---
 @st.cache_data
 def get_price_data(tickers, start_date, end_date):
     start_buffer = (pd.to_datetime(start_date) - timedelta(days=5)).strftime('%Y-%m-%d')
@@ -68,7 +66,7 @@ def get_price_data(tickers, start_date, end_date):
             continue
     return price_data
 
-# --- Helpers ---
+# --- Yuhhh ---
 def compute_performance(price_data):
     perf = {}
     avg_volume = {}
@@ -119,7 +117,7 @@ if start_date > end_date:
     st.error("⚠️ Start date must be before end date.")
     st.stop()
 
-# --- Load metadata & price ---
+# --- Load data & price ---
 metadata = get_sp500_metadata() if index_choice == "S&P 500" else load_csi300_metadata()
 tickers = metadata['Symbol'].dropna().unique().tolist()
 
